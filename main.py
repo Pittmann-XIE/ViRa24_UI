@@ -42,8 +42,39 @@ from pathlib import Path
 from threading import Thread
 from datetime import datetime
 
-# additional functions
-from resources.vira_lib import estimate_offset
+# # additional functions
+# from resources.vira_lib import estimate_offset
+
+
+import numpy as np
+
+
+# function to estimate the offset of inphase and quadrature data
+def estimate_offset(Idata, Qdata):
+    iq_mat = np.transpose(np.array([Idata, Qdata]))
+    cov_mat = np.cov(Idata, Qdata)
+    _, ev = np.linalg.eigh(cov_mat)
+    iq_mat_rotated = np.matmul(iq_mat, np.transpose(ev))
+    ky = np.mean(iq_mat_rotated[:, 1])
+    iq_mat_rotated[:, 1] -= ky
+    iq_complex_rotated = iq_mat_rotated[:, 0] + 1j * iq_mat_rotated[:, 1]
+    kx = np.zeros(int((len(iq_complex_rotated) - 1) * len(iq_complex_rotated) / 2))
+    ind = 0
+    for m in range(len(iq_complex_rotated)):
+        for n in range(m, len(iq_complex_rotated)):
+            if m != n:
+                try:
+                    kx[ind] = (abs(iq_complex_rotated[m]) ** 2 - abs(iq_complex_rotated[n]) ** 2) / \
+                              (2 * (iq_complex_rotated[m] - iq_complex_rotated[n]).real)
+                except RuntimeWarning:
+                    kx[ind] = 0
+                ind += 1
+    kx = kx[~np.isnan(kx)]
+    if kx.size != 0:
+        offset = np.matmul([np.median(kx), ky], np.linalg.inv(ev))
+    else:
+        offset = [0, 0]
+    return offset
 
 
 #%% signaling class
